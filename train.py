@@ -127,8 +127,8 @@ class DanceDataset(Dataset):
 
         # Load ignore list if present
         ignore = set()
-        if os.path.exists("ignore_list.txt"):
-            with open("ignore_list.txt") as f:
+        if os.path.exists("Bailando/ignore_list.txt"):
+            with open("Bailando/ignore_list.txt") as f:
                 ignore = set(line.strip() for line in f)
             print(f"   Ignoring {len(ignore)} bad sequences")
 
@@ -163,9 +163,8 @@ class DanceDataset(Dataset):
             motion = pickle.load(f)
 
         # Music features — shape (T, feature_dim)
-        music_feat = torch.tensor(
-            music["music_array"], dtype=torch.float32
-        )
+        key = "music_array" if "music_array" in music else list(music.keys())[0]
+        music_feat = torch.tensor(music[key], dtype=torch.float32)
 
         # Poses — shape (T, 24*3) — flatten joint angles
         poses = torch.tensor(
