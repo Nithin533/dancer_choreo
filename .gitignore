@@ -1,0 +1,25 @@
+# Audio files (too large for github)
+audio/
+output/
+separated/
+
+# Data (too large)
+motions/
+wav/
+dataset/
+
+# Python
+__pycache__/
+*.pyc
+*.npy
+*.pkl
+*.mp3
+*.wav
+*.png
+
+dance_env/
+__pycache__/
+*.pyc
+node_modules/
+output/
+separated/

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dance Choreography</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f0f;
+      color: #f0f0f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 16px;
+      padding: 2.5rem;
+      width: 100%;
+      max-width: 520px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 2rem;
+    }
+
+    /* Upload zone */
+    .upload-zone {
+      border: 2px dashed #333;
+      border-radius: 12px;
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      margin-bottom: 1.5rem;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: #7c6cf7;
+      background: #1f1d2e;
+    }
+
+    .upload-icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+    }
+
+    .upload-zone p {
+      font-size: 14px;
+      color: #aaa;
+      margin-bottom: 6px;
+    }
+
+    .upload-zone span {
+      font-size: 12px;
+      color: #555;
+    }
+
+    #file-input {
+      display: none;
+    }
+
+    /* Selected file */
+    .file-selected {
+      background: #1f1d2e;
+      border: 1px solid #3a3760;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #a89ff5;
+      margin-bottom: 1.5rem;
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .file-selected.show { display: flex; }
+
+    /* Button */
+    .btn {
+      width: 100%;
+      padding: 13px;
+      background: #7c6cf7;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+
+    .btn:hover { background: #6a5ae0; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Steps */
+    .steps {
+      margin-top: 2rem;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .steps.show { display: flex; }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      color: #666;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: #141414;
+      border: 1px solid #222;
+      transition: all 0.3s;
+    }
+
+    .step.active {
+      color: #f0f0f0;
+      border-color: #7c6cf7;
+      background: #1f1d2e;
+    }
+
+    .step.done {
+      color: #5cb85c;
+      border-color: #2a4a2a;
+      background: #141f14;
+    }
+
+    .step.error {
+      color: #e05c5c;
+      border-color: #4a2a2a;
+      background: #1f1414;
+    }
+
+    .step-icon { font-size: 16px; width: 20px; text-align: center; }
+
+    /* Result */
+    .result {
+      margin-top: 1.5rem;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      display: none;
+    }
+
+    .result.success {
+      background: #141f14;
+      border: 1px solid #2a4a2a;
+      color: #5cb85c;
+      display: block;
+    }
+
+    .result.error {
+      background: #1f1414;
+      border: 1px solid #4a2a2a;
+      color: #e05c5c;
+      display: block;
+    }
+
+    .result p { margin-bottom: 6px; }
+    .result p:last-child { margin-bottom: 0; }
+
+    .output-path {
+      font-family: monospace;
+      font-size: 11px;
+      color: #888;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>🎵 Dance Choreography</h1>
+  <p class="subtitle">Upload a song — the pipeline will process it and prepare it for choreography</p>
+
+  <!-- Upload zone -->
+  <div class="upload-zone" id="upload-zone">
+    <div class="upload-icon">🎧</div>
+    <p>Drag and drop your audio file here</p>
+    <p>or <strong style="color:#7c6cf7; cursor:pointer;" onclick="document.getElementById('file-input').click()">browse to upload</strong></p>
+    <span>MP3, WAV, OGG, M4A · Max 5 minutes</span>
+  </div>
+
+  <input type="file" id="file-input" accept=".mp3,.wav,.ogg,.m4a" />
+
+  <!-- Selected file display -->
+  <div class="file-selected" id="file-selected">
+    <span>🎵</span>
+    <span id="file-name">No file selected</span>
+  </div>
+
+  <!-- Upload button -->
+  <button class="btn" id="upload-btn" disabled onclick="uploadFile()">
+    Process Song
+  </button>
+
+  <!-- Pipeline steps -->
+  <div class="steps" id="steps">
+    <div class="step" id="step-1"><span class="step-icon">⬜</span> Validate audio</div>
+    <div class="step" id="step-2"><span class="step-icon">⬜</span> Normalize volume</div>
+    <div class="step" id="step-3"><span class="step-icon">⬜</span> Remove vocals (Demucs)</div>
+    <div class="step" id="step-4"><span class="step-icon">⬜</span> Detect beats + sub-beats</div>
+    <div class="step" id="step-5"><span class="step-icon">⬜</span> Extract music features</div>
+  </div>
+
+  <!-- Result -->
+  <div class="result" id="result"></div>
+</div>
+
+<script>
+  const fileInput  = document.getElementById('file-input');
+  const uploadZone = document.getElementById('upload-zone');
+  const uploadBtn  = document.getElementById('upload-btn');
+  const fileSelected = document.getElementById('file-selected');
+  const fileName   = document.getElementById('file-name');
+  const stepsDiv   = document.getElementById('steps');
+  const resultDiv  = document.getElementById('result');
+
+  let selectedFile = null;
+
+  // File input change
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) selectFile(fileInput.files[0]);
+  });
+
+  // Drag and drop
+  uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.classList.add('drag-over');
+  });
+
+  uploadZone.addEventListener('dragleave', () => {
+    uploadZone.classList.remove('drag-over');
+  });
+
+  uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length > 0) selectFile(e.dataTransfer.files[0]);
+  });
+
+  uploadZone.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  function selectFile(file) {
+    selectedFile = file;
+    fileName.textContent = file.name;
+    fileSelected.classList.add('show');
+    uploadBtn.disabled = false;
+    resultDiv.className = 'result';
+    resultDiv.innerHTML = '';
+    resetSteps();
+  }
+
+  function resetSteps() {
+    for (let i = 1; i <= 5; i++) {
+      const step = document.getElementById(`step-${i}`);
+      step.className = 'step';
+      step.querySelector('.step-icon').textContent = '⬜';
+    }
+  }
+
+  function setStep(num, state) {
+    const step = document.getElementById(`step-${num}`);
+    const icon = step.querySelector('.step-icon');
+    if (state === 'active') { step.className = 'step active'; icon.textContent = '🔄'; }
+    if (state === 'done')   { step.className = 'step done';   icon.textContent = '✅'; }
+    if (state === 'error')  { step.className = 'step error';  icon.textContent = '❌'; }
+  }
+
+  async function uploadFile() {
+    if (!selectedFile) return;
+
+    uploadBtn.disabled = true;
+    stepsDiv.classList.add('show');
+    resultDiv.className = 'result';
+    resultDiv.innerHTML = '';
+    resetSteps();
+
+    // Animate steps — they run on the backend so we simulate progress
+    setStep(1, 'active');
+    await delay(600);  setStep(1, 'done');
+
+    setStep(2, 'active');
+    await delay(800);  setStep(2, 'done');
+
+    setStep(3, 'active'); // Demucs takes the longest
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+      const response = await fetch('http://localhost:8000/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      setStep(3, 'done');
+      setStep(4, 'active');
+      await delay(500); setStep(4, 'done');
+
+      setStep(5, 'active');
+      await delay(500); setStep(5, 'done');
+
+      if (data.status === 'success') {
+        resultDiv.className = 'result success';
+        resultDiv.innerHTML = `
+          <p>✅ <strong>Pipeline complete!</strong></p>
+          <p>Your song has been processed and is ready for choreography.</p>
+          <div class="output-path">📂 No-vocals: ${data.no_vocals}</div>
+          <div class="output-path">🗺️ Beat map:  ${data.beat_map}</div>
+        `;
+      } else {
+        throw new Error(data.message);
+      }
+
+    } catch (err) {
+      setStep(3, 'error');
+      resultDiv.className = 'result error';
+      resultDiv.innerHTML = `<p>❌ <strong>Error:</strong> ${err.message}</p><p>Check the terminal for details.</p>`;
+    }
+
+    uploadBtn.disabled = false;
+  }
+
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+</script>
+
+</body>
+</html>
