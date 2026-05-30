@@ -1,25 +1,27 @@
-# Audio files (too large for github)
+# Data folders
+dataset/
+motions/
+wav/
 audio/
 output/
 separated/
+checkpoints/
 
-# Data (too large)
-motions/
-wav/
-dataset/
+# Virtual environment
+dance_env/
 
-# Python
+# Python cache
 __pycache__/
 *.pyc
+*.pyo
+
+# Data files
 *.npy
 *.pkl
 *.mp3
 *.wav
 *.png
+*.gif
 
-dance_env/
-__pycache__/
-*.pyc
-node_modules/
-output/
-separated/
+# Mac junk
+__MACOSX/
