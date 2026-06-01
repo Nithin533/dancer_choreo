@@ -13,6 +13,8 @@ import os
 import sys
 import time
 import pickle
+import json
+import re
 import numpy as np
 import torch
 import torch.nn as nn
@@ -120,10 +122,18 @@ class DanceDataset(Dataset):
 
         print("📂 Loading dataset pairs...")
 
+        # Music files are per-song: mBR4.json, mHO1.json, etc.
         music_files = sorted([
             f for f in os.listdir(music_dir)
-            if f.endswith(".pkl")
+            if f.endswith(".json")
         ])
+
+        # Build lookup: music_id -> full path
+        # e.g. "mBR4" -> "dataset/aistpp_music_feat_7.5fps/mBR4.json"
+        music_lookup = {}
+        for f in music_files:
+            music_id = os.path.splitext(f)[0]          # "mBR4"
+            music_lookup[music_id] = os.path.join(music_dir, f)
 
         # Load ignore list if present
         ignore = set()
@@ -132,20 +142,33 @@ class DanceDataset(Dataset):
                 ignore = set(line.strip() for line in f)
             print(f"   Ignoring {len(ignore)} bad sequences")
 
-        for music_file in tqdm(music_files, desc="  Pairing files"):
-            seq_name    = music_file.replace(".pkl", "")
+        # Motion files are per-sequence: gBR_sBM_cAll_d04_mBR4_ch02.pkl
+        # Extract the music_id embedded in the filename (the mXXX part)
+        motion_files = sorted([
+            f for f in os.listdir(motions_dir)
+            if f.endswith(".pkl")
+        ])
+
+        for motion_file in tqdm(motion_files, desc="  Pairing files"):
+            seq_name = os.path.splitext(motion_file)[0]
 
             if seq_name in ignore:
                 continue
 
-            motion_file = os.path.join(motions_dir, seq_name + ".pkl")
+            # Extract music_id from motion filename
+            # Pattern: ..._{music_id}_ch##  e.g. mBR4, mHO1
+            match = re.search(r'_(m[A-Z0-9]+)_ch', motion_file)
+            if not match:
+                continue
 
-            if not os.path.exists(motion_file):
+            music_id = match.group(1)   # "mBR4"
+
+            if music_id not in music_lookup:
                 continue
 
             self.pairs.append((
-                os.path.join(music_dir, music_file),
-                motion_file
+                music_lookup[music_id],
+                os.path.join(motions_dir, motion_file)
             ))
 
         print(f"✅ Dataset: {len(self.pairs)} valid pairs found\n")
@@ -156,8 +179,8 @@ class DanceDataset(Dataset):
     def __getitem__(self, idx):
         music_path, motion_path = self.pairs[idx]
 
-        with open(music_path, "rb") as f:
-            music = pickle.load(f)
+        with open(music_path, "r") as f:
+            music = json.load(f)
 
         with open(motion_path, "rb") as f:
             motion = pickle.load(f)
