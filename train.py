@@ -221,10 +221,9 @@ def collate_fn(batch):
 #  MODEL — Transformer based
 # ─────────────────────────────────────────
 
+# Inside train.py:
 class DanceTransformer(nn.Module):
-
-    def __init__(self, music_dim=35, pose_dim=72,
-                 d_model=256, nhead=8, num_layers=6):
+    def __init__(self, music_dim=438, pose_dim=72, d_model=256, nhead=8, num_layers=6):
         super().__init__()
 
         self.music_proj = nn.Linear(music_dim, d_model)

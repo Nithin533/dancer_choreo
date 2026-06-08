@@ -4,8 +4,8 @@ Runs the trained DanceTransformer on a song and outputs 3D poses.
 Style is automatically detected from the audio.
 
 Exact architecture matched to best_model.pt:
-  music_dim   = 438   (from aistpp_music_feat_7.5fps features)
-  pose_dim    = 72    (24 SMPL joints x 3 angles)
+  music_dim   = 438
+  pose_dim    = 72
   d_model     = 256
   nhead       = 8
   num_layers  = 6
@@ -20,15 +20,6 @@ import torch
 import torch.nn as nn
 import librosa
 from scipy.signal import savgol_filter
-
-
-# ─────────────────────────────────────────
-#  CONFIG — only change these
-# ─────────────────────────────────────────
-
-CHECKPOINT_PATH = "best_model.pt"
-NO_VOCALS_PATH  = "separated/Raga/htdemucs/normalized_audio/no_vocals.mp3"
-SONG_FOLDER     = "output/Raga"
 
 
 # ─────────────────────────────────────────
@@ -65,7 +56,7 @@ class DanceTransformer(nn.Module):
 
 
 # ─────────────────────────────────────────
-#  STYLE DETECTION — automatic from audio
+#  STYLE DETECTION
 # ─────────────────────────────────────────
 
 def detect_style(audio_path):
@@ -74,43 +65,29 @@ def detect_style(audio_path):
 
     y, sr = librosa.load(audio_path)
 
-    # BPM
-    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-    tempo = float(np.asarray(tempo).flatten()[0])
+    tempo, _     = librosa.beat.beat_track(y=y, sr=sr)
+    tempo        = float(np.asarray(tempo).flatten()[0])
+    avg_energy   = float(np.mean(librosa.feature.rms(y=y)[0]))
+    avg_flux     = float(np.mean(librosa.onset.onset_strength(y=y, sr=sr)))
+    avg_rolloff  = float(np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr)[0]))
 
-    # Average RMS energy
-    rms = librosa.feature.rms(y=y)[0]
-    avg_energy = float(np.mean(rms))
+    print(f"   BPM    : {tempo:.1f}")
+    print(f"   Energy : {avg_energy:.4f}")
+    print(f"   Flux   : {avg_flux:.4f}")
+    print(f"   Rolloff: {avg_rolloff:.1f} Hz")
 
-    # Spectral flux — how sharply sound changes moment to moment
-    flux = librosa.onset.onset_strength(y=y, sr=sr)
-    avg_flux = float(np.mean(flux))
-
-    # Spectral rolloff — brightness of sound
-    rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
-    avg_rolloff = float(np.mean(rolloff))
-
-    print(f"   BPM          : {tempo:.1f}")
-    print(f"   Energy       : {avg_energy:.4f}")
-    print(f"   Flux         : {avg_flux:.4f}")
-    print(f"   Rolloff      : {avg_rolloff:.1f} Hz")
-
-    # ── Decision logic ──
     if tempo > 120 and avg_energy > 0.05 and avg_flux > 2.0:
-        style = "hiphop"
-        reason = f"fast tempo ({tempo:.0f} BPM) + high energy + sharp hits"
-
+        style  = "hiphop"
+        reason = f"fast tempo ({tempo:.0f} BPM) + high energy"
     elif tempo > 105 and avg_energy > 0.03 and avg_rolloff > 3000:
-        style = "kpop"
+        style  = "kpop"
         reason = f"upbeat tempo ({tempo:.0f} BPM) + bright sound"
-
     elif tempo < 90 and avg_energy < 0.03:
-        style = "cinematic"
+        style  = "cinematic"
         reason = f"slow tempo ({tempo:.0f} BPM) + low energy"
-
     else:
-        style = "freestyle"
-        reason = f"mixed tempo ({tempo:.0f} BPM) + variable energy"
+        style  = "freestyle"
+        reason = f"mixed tempo ({tempo:.0f} BPM)"
 
     print(f"\n✅ Detected style : {style.upper()}")
     print(f"   Reason        : {reason}")
@@ -132,8 +109,7 @@ def load_model(checkpoint_path):
         print(f"❌ Checkpoint not found: {checkpoint_path}")
         sys.exit(1)
 
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
-
+    ckpt  = torch.load(checkpoint_path, map_location=device, weights_only=False)
     print(f"   Epoch  : {ckpt.get('epoch', '?')}")
     print(f"   Loss   : {ckpt.get('loss', '?'):.4f}")
 
@@ -154,54 +130,28 @@ def extract_features(audio_path):
 
     print(f"\n🎵 Extracting 438-dim features...")
 
-    y, sr = librosa.load(audio_path, sr=None)
-
-    # Match AIST++ 7.5fps
+    y, sr      = librosa.load(audio_path, sr=None)
     hop_length = int(sr / 7.5)
 
-    # 1. Chroma (12)
-    chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=hop_length)
-
-    # 2. MFCCs (20)
-    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20, hop_length=hop_length)
-
-    # 3. MFCC delta (20)
-    mfcc_delta = librosa.feature.delta(mfcc)
-
-    # 4. Mel bands compressed to 20
-    mel    = librosa.feature.melspectrogram(y=y, sr=sr, hop_length=hop_length, n_mels=128)
-    mel_db = librosa.power_to_db(mel, ref=np.max)
-    mel_bands = np.array([
-        mel_db[i*6:(i+1)*6, :].mean(axis=0) for i in range(20)
-    ])
-
-    # 5. RMS energy (1)
-    rms = librosa.feature.rms(y=y, hop_length=hop_length)
-
-    # 6. Spectral centroid (1)
-    spec_centroid = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=hop_length)
-
-    # 7. Spectral bandwidth (1)
+    chroma         = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=hop_length)
+    mfcc           = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20, hop_length=hop_length)
+    mfcc_delta     = librosa.feature.delta(mfcc)
+    mel            = librosa.feature.melspectrogram(y=y, sr=sr, hop_length=hop_length, n_mels=128)
+    mel_db         = librosa.power_to_db(mel, ref=np.max)
+    mel_bands      = np.array([mel_db[i*6:(i+1)*6, :].mean(axis=0) for i in range(20)])
+    rms            = librosa.feature.rms(y=y, hop_length=hop_length)
+    spec_centroid  = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=hop_length)
     spec_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr, hop_length=hop_length)
-
-    # 8. Spectral rolloff (1)
-    spec_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr, hop_length=hop_length)
-
-    # 9. Spectral contrast (7)
-    spec_contrast = librosa.feature.spectral_contrast(y=y, sr=sr, hop_length=hop_length)
-
-    # 10. Onset strength (1)
-    onset = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length).reshape(1, -1)
-
-    # 11. Tempogram compressed to 354
-    tempogram = librosa.feature.tempogram(y=y, sr=sr, hop_length=hop_length)
-    n_needed  = 354
+    spec_rolloff   = librosa.feature.spectral_rolloff(y=y, sr=sr, hop_length=hop_length)
+    spec_contrast  = librosa.feature.spectral_contrast(y=y, sr=sr, hop_length=hop_length)
+    onset          = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length).reshape(1, -1)
+    tempogram      = librosa.feature.tempogram(y=y, sr=sr, hop_length=hop_length)
+    n_needed       = 354
     tempogram_compressed = np.array([
         tempogram[i*(384//n_needed):(i+1)*(384//n_needed), :].mean(axis=0)
         for i in range(n_needed)
     ])
 
-    # Align all to same T
     T = min(
         chroma.shape[1], mfcc.shape[1], mfcc_delta.shape[1],
         mel_bands.shape[1], rms.shape[1], spec_centroid.shape[1],
@@ -211,20 +161,19 @@ def extract_features(audio_path):
     )
 
     features = np.vstack([
-        chroma[:, :T],                   # 12
-        mfcc[:, :T],                     # 20
-        mfcc_delta[:, :T],               # 20
-        mel_bands[:, :T],                # 20
-        rms[:, :T],                      #  1
-        spec_centroid[:, :T],            #  1
-        spec_bandwidth[:, :T],           #  1
-        spec_rolloff[:, :T],             #  1
-        spec_contrast[:, :T],            #  7
-        onset[:, :T],                    #  1
-        tempogram_compressed[:, :T],     # 354
-    ]).T  # → (T, 438)
+        chroma[:, :T],
+        mfcc[:, :T],
+        mfcc_delta[:, :T],
+        mel_bands[:, :T],
+        rms[:, :T],
+        spec_centroid[:, :T],
+        spec_bandwidth[:, :T],
+        spec_rolloff[:, :T],
+        spec_contrast[:, :T],
+        onset[:, :T],
+        tempogram_compressed[:, :T],
+    ]).T  # (T, 438)
 
-    # Normalize
     features = (features - features.mean(axis=0)) / (features.std(axis=0) + 1e-8)
 
     print(f"✅ Features shape : {features.shape}")
@@ -234,16 +183,16 @@ def extract_features(audio_path):
 
 
 # ─────────────────────────────────────────
-#  SMOOTHING — based on detected style
+#  SMOOTHING
 # ─────────────────────────────────────────
 
 def smooth_poses(poses, style):
 
     style_window = {
-        "hiphop"   : 7,    # sharp, punchy
-        "kpop"     : 11,   # clean, precise
-        "cinematic": 21,   # slow, fluid
-        "freestyle": 9,    # natural
+        "hiphop"   : 7,
+        "kpop"     : 11,
+        "cinematic": 21,
+        "freestyle": 9,
     }
     window = style_window.get(style, 11)
 
@@ -254,58 +203,60 @@ def smooth_poses(poses, style):
 
     smoothed = np.copy(poses)
     for j in range(poses.shape[1]):
-        smoothed[:, j] = savgol_filter(
-            poses[:, j],
-            window_length=window,
-            polyorder=3
-        )
+        smoothed[:, j] = savgol_filter(poses[:, j], window_length=window, polyorder=3)
 
     print(f"✅ Smoothing      : window={window} (style={style})")
     return smoothed
 
 
 # ─────────────────────────────────────────
-#  MAIN PIPELINE
+#  MAIN — called by api.py automatically
 # ─────────────────────────────────────────
 
 def generate_poses(
     no_vocals_path,
-    checkpoint_path = CHECKPOINT_PATH,
-    song_folder     = SONG_FOLDER,
+    checkpoint_path = "best_model.pt",
+    song_folder     = None,
 ):
     print("\n" + "="*55)
     print("  DANCE POSE GENERATION")
     print("="*55)
 
+    # Auto-derive song_folder from no_vocals_path if not given
+    # e.g. "separated/Raga/htdemucs/..." → song_name = "Raga"
+    if song_folder is None:
+        parts     = no_vocals_path.replace("\\", "/").split("/")
+        song_name = parts[1] if len(parts) > 1 else "output"
+        song_folder = f"output/{song_name}"
+
     os.makedirs(song_folder, exist_ok=True)
 
     if not os.path.exists(no_vocals_path):
         print(f"❌ Audio not found: {no_vocals_path}")
-        sys.exit(1)
+        return None
 
-    # ── Auto detect style ──
+    # Auto detect style
     style, tempo = detect_style(no_vocals_path)
 
-    # ── Load model ──
+    # Load model
     model, device = load_model(checkpoint_path)
 
-    # ── Extract features ──
-    features = extract_features(no_vocals_path)
-
-    # ── Run model ──
-    print("\n💃 Generating poses...")
+    # Extract features
+    features    = extract_features(no_vocals_path)
     feat_tensor = torch.FloatTensor(features).unsqueeze(0).to(device)
 
+    # Generate
+    print("\n💃 Generating poses...")
     with torch.no_grad():
         poses = model(feat_tensor)
 
     poses_np = poses.squeeze(0).cpu().numpy()
     print(f"✅ Raw poses      : {poses_np.shape}")
 
-    # ── Smooth ──
+    # Smooth
     poses_smooth = smooth_poses(poses_np, style=style)
 
-    # ── Save ──
+    # Save
     raw_path    = f"{song_folder}/poses_raw.npy"
     smooth_path = f"{song_folder}/poses_smooth.npy"
     meta_path   = f"{song_folder}/generation_meta.pkl"
@@ -335,19 +286,16 @@ def generate_poses(
     print(f"  Style  : {style.upper()} (auto detected)")
     print(f"  BPM    : {tempo:.1f}")
     print(f"  Joints : 24 (72 dims = 24 x 3 angles)")
-    print("="*55)
-    print("\n✅ Next step: run visualize_poses.py\n")
+    print("="*55 + "\n")
 
-    return smooth_path, style
+    return smooth_path
 
 
 # ─────────────────────────────────────────
-#  RUN
+#  RUN STANDALONE
 # ─────────────────────────────────────────
 
 if __name__ == "__main__":
-    generate_poses(
-        no_vocals_path  = NO_VOCALS_PATH,
-        checkpoint_path = CHECKPOINT_PATH,
-        song_folder     = SONG_FOLDER,
-    )
+    import sys
+    path = sys.argv[1] if len(sys.argv) > 1 else "separated/Raga/htdemucs/normalized_audio/no_vocals.mp3"
+    generate_poses(no_vocals_path=path)

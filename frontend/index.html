@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dance Choreography</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0a0a0a;color:#f0f0f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;height:100vh;overflow:hidden}
+
+    /* ── Layout ── */
+    #app{display:flex;height:100vh}
+    #sidebar{width:320px;flex-shrink:0;background:#111;border-right:1px solid #222;display:flex;flex-direction:column;padding:1.5rem;gap:1rem;overflow-y:auto}
+    #viewer{flex:1;position:relative}
+
+    /* ── Logo ── */
+    .logo{font-size:18px;font-weight:600;letter-spacing:-0.5px}
+    .logo span{color:#7c6cf7}
+
+    /* ── Upload zone ── */
+    .upload-zone{border:2px dashed #2a2a2a;border-radius:12px;padding:1.5rem 1rem;text-align:center;cursor:pointer;transition:all .2s}
+    .upload-zone:hover,.upload-zone.over{border-color:#7c6cf7;background:#1a1830}
+    .upload-icon{font-size:32px;margin-bottom:8px}
+    .upload-zone p{font-size:13px;color:#888;margin-bottom:4px}
+    .upload-zone span{font-size:11px;color:#444}
+    #file-input{display:none}
+
+    /* ── File pill ── */
+    .file-pill{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:8px;padding:8px 12px;font-size:12px;color:#a89ff5;display:none;align-items:center;gap:6px}
+    .file-pill.show{display:flex}
+
+    /* ── Button ── */
+    .btn{width:100%;padding:12px;background:#7c6cf7;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;transition:background .2s}
+    .btn:hover{background:#6a5ae0}
+    .btn:disabled{opacity:.4;cursor:not-allowed}
+
+    /* ── Steps ── */
+    .steps{display:flex;flex-direction:column;gap:6px}
+    .step{display:flex;align-items:center;gap:10px;font-size:12px;color:#555;padding:8px 10px;border-radius:8px;background:#0f0f0f;border:1px solid #1a1a1a;transition:all .3s}
+    .step.active{color:#f0f0f0;border-color:#7c6cf7;background:#1a1830}
+    .step.done{color:#4caf50;border-color:#1a3a1a;background:#0f1f0f}
+    .step.error{color:#f44336;border-color:#3a1a1a;background:#1f0f0f}
+    .step-icon{font-size:14px;width:18px;text-align:center}
+
+    /* ── Meta info ── */
+    .meta{background:#0f0f0f;border:1px solid #1a1a1a;border-radius:8px;padding:10px 12px;font-size:12px;display:none}
+    .meta.show{display:block}
+    .meta-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #1a1a1a}
+    .meta-row:last-child{border:none}
+    .meta-key{color:#666}
+    .meta-val{color:#a89ff5;font-weight:500}
+
+    /* ── Playback controls ── */
+    .controls{background:#0f0f0f;border:1px solid #1a1a1a;border-radius:8px;padding:10px 12px;display:none;flex-direction:column;gap:8px}
+    .controls.show{display:flex}
+    .ctrl-row{display:flex;align-items:center;gap:8px}
+    .ctrl-btn{background:#1a1a2e;border:1px solid #2a2a4a;color:#a89ff5;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;transition:background .2s}
+    .ctrl-btn:hover{background:#2a2a4e}
+    .ctrl-btn.active{background:#7c6cf7;color:#fff;border-color:#7c6cf7}
+    .speed-label{font-size:11px;color:#666}
+    input[type=range]{flex:1;accent-color:#7c6cf7}
+
+    /* ── Canvas overlay info ── */
+    #overlay{position:absolute;top:16px;left:16px;pointer-events:none}
+    .overlay-pill{background:rgba(0,0,0,.6);backdrop-filter:blur(8px);border:1px solid #222;border-radius:20px;padding:5px 14px;font-size:12px;color:#aaa;display:inline-block;margin-bottom:6px}
+    #beat-flash{position:absolute;inset:0;pointer-events:none;border-radius:0;opacity:0;background:radial-gradient(ellipse at center, rgba(124,108,247,.15) 0%, transparent 70%);transition:opacity .05s}
+
+    /* ── Loading spinner ── */
+    #loading{position:absolute;inset:0;background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:10}
+    #loading.hide{display:none}
+    .spinner{width:40px;height:40px;border:3px solid #222;border-top-color:#7c6cf7;border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .loading-text{font-size:13px;color:#666}
+
+    /* ── Empty state ── */
+    #empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;pointer-events:none}
+    #empty.hide{display:none}
+    .empty-icon{font-size:64px;opacity:.15}
+    .empty-text{font-size:14px;color:#333}
+  </style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── SIDEBAR ── -->
+  <div id="sidebar">
+    <div class="logo">💃 Dance<span>Choreo</span></div>
+
+    <!-- Upload -->
+    <div class="upload-zone" id="upload-zone">
+      <div class="upload-icon">🎵</div>
+      <p>Drop your song here</p>
+      <p>or <strong style="color:#7c6cf7;cursor:pointer" onclick="document.getElementById('file-input').click()">browse</strong></p>
+      <span>MP3 · WAV · OGG · M4A · max 5 min</span>
+    </div>
+    <input type="file" id="file-input" accept=".mp3,.wav,.ogg,.m4a"/>
+
+    <div class="file-pill" id="file-pill">🎵 <span id="file-name"></span></div>
+
+    <button class="btn" id="process-btn" disabled onclick="processFile()">Generate Dance</button>
+
+    <!-- Pipeline steps -->
+    <div class="steps">
+      <div class="step" id="s1"><span class="step-icon">⬜</span> Validate + normalize audio</div>
+      <div class="step" id="s2"><span class="step-icon">⬜</span> Remove vocals (Demucs)</div>
+      <div class="step" id="s3"><span class="step-icon">⬜</span> Detect beats + segments</div>
+      <div class="step" id="s4"><span class="step-icon">⬜</span> Generate poses (AI model)</div>
+      <div class="step" id="s5"><span class="step-icon">⬜</span> Smooth + load into viewer</div>
+    </div>
+
+    <!-- Metadata -->
+    <div class="meta" id="meta">
+      <div class="meta-row"><span class="meta-key">Style</span><span class="meta-val" id="m-style">—</span></div>
+      <div class="meta-row"><span class="meta-key">BPM</span><span class="meta-val" id="m-bpm">—</span></div>
+      <div class="meta-row"><span class="meta-key">Frames</span><span class="meta-val" id="m-frames">—</span></div>
+      <div class="meta-row"><span class="meta-key">Song</span><span class="meta-val" id="m-song">—</span></div>
+    </div>
+
+    <!-- Playback controls -->
+    <div class="controls" id="controls">
+      <div class="ctrl-row">
+        <button class="ctrl-btn" id="play-btn" onclick="togglePlay()">⏸ Pause</button>
+        <button class="ctrl-btn" onclick="resetAnim()">↺ Restart</button>
+      </div>
+      <div class="ctrl-row">
+        <span class="speed-label">Speed</span>
+        <input type="range" id="speed-slider" min="0.25" max="3" step="0.25" value="1" oninput="setSpeed(this.value)"/>
+        <span class="speed-label" id="speed-val">1×</span>
+      </div>
+      <div class="ctrl-row">
+        <span class="speed-label">Frame</span>
+        <input type="range" id="frame-slider" min="0" value="0" oninput="scrubTo(this.value)"/>
+        <span class="speed-label" id="frame-val">0</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── 3D VIEWER ── -->
+  <div id="viewer">
+    <div id="loading" class="hide">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loading-text">Processing your song…</div>
+    </div>
+
+    <div id="empty">
+      <div class="empty-icon">🕺</div>
+      <div class="empty-text">Upload a song to see the dancer</div>
+    </div>
+
+    <div id="beat-flash"></div>
+
+    <div id="overlay">
+      <div class="overlay-pill" id="frame-overlay">Frame — / —</div>
+    </div>
+
+    <canvas id="three-canvas"></canvas>
+  </div>
+
+</div>
+
+<!-- Three.js from CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// ══════════════════════════════════════════════
+//  FILE SELECTION
+// ══════════════════════════════════════════════
+const fileInput  = document.getElementById('file-input');
+const uploadZone = document.getElementById('upload-zone');
+let selectedFile = null;
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) selectFile(fileInput.files[0]);
+});
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('over');
+  if (e.dataTransfer.files[0]) selectFile(e.dataTransfer.files[0]);
+});
+uploadZone.addEventListener('click', () => fileInput.click());
+
+function selectFile(file) {
+  selectedFile = file;
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('file-pill').classList.add('show');
+  document.getElementById('process-btn').disabled = false;
+  resetSteps();
+}
+
+// ══════════════════════════════════════════════
+//  PIPELINE STEPS UI
+// ══════════════════════════════════════════════
+function resetSteps() {
+  for (let i=1;i<=5;i++) setStep(i,'idle');
+}
+function setStep(n, state) {
+  const el   = document.getElementById(`s${n}`);
+  const icon = el.querySelector('.step-icon');
+  el.className = 'step' + (state !== 'idle' ? ' ' + state : '');
+  icon.textContent = {idle:'⬜', active:'🔄', done:'✅', error:'❌'}[state];
+}
+
+// ══════════════════════════════════════════════
+//  UPLOAD + PROCESS
+// ══════════════════════════════════════════════
+async function processFile() {
+  if (!selectedFile) return;
+
+  document.getElementById('process-btn').disabled = true;
+  document.getElementById('empty').classList.add('hide');
+  document.getElementById('loading').classList.remove('hide');
+  document.getElementById('loading-text').textContent = 'Processing your song…';
+  document.getElementById('meta').classList.remove('show');
+  document.getElementById('controls').classList.remove('show');
+  resetSteps();
+
+  // Animate steps while backend works
+  setStep(1,'active');
+  await delay(400); setStep(1,'done'); setStep(2,'active');
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+
+  let data;
+  try {
+    // Steps 2-4 happen on backend — animate them with delays
+    const fetchPromise = fetch('http://localhost:8000/upload', {method:'POST', body:formData});
+
+    await delay(3000); setStep(2,'done'); setStep(3,'active');
+    await delay(2000); setStep(3,'done'); setStep(4,'active');
+
+    const response = await fetchPromise;
+    data = await response.json();
+
+    if (data.status !== 'success') throw new Error(data.message || 'Processing failed');
+
+    setStep(4,'done'); setStep(5,'active');
+
+  } catch(err) {
+    setStep(4,'error');
+    document.getElementById('loading').classList.add('hide');
+    document.getElementById('process-btn').disabled = false;
+    alert('Error: ' + err.message);
+    return;
+  }
+
+  // Load poses JSON
+  document.getElementById('loading-text').textContent = 'Loading dance into viewer…';
+  try {
+    const posesResp = await fetch(data.poses_url);
+    const posesData = await posesResp.json();
+
+    setStep(5,'done');
+
+    // Update metadata panel
+    document.getElementById('m-style').textContent  = data.style.toUpperCase();
+    document.getElementById('m-bpm').textContent    = data.tempo.toFixed(1);
+    document.getElementById('m-frames').textContent = data.total_frames;
+    document.getElementById('m-song').textContent   = data.song_name;
+    document.getElementById('meta').classList.add('show');
+    document.getElementById('controls').classList.add('show');
+
+    // Setup frame slider
+    const fs = document.getElementById('frame-slider');
+    fs.max = posesData.length - 1;
+    fs.value = 0;
+
+    // Start Three.js animation
+    document.getElementById('loading').classList.add('hide');
+    startViewer(posesData, data.audio_url, data.tempo);
+
+  } catch(err) {
+    setStep(5,'error');
+    document.getElementById('loading').classList.add('hide');
+    alert('Failed to load poses: ' + err.message);
+  }
+
+  document.getElementById('process-btn').disabled = false;
+}
+
+// ══════════════════════════════════════════════
+//  THREE.JS VIEWER
+// ══════════════════════════════════════════════
+
+// SMPL joint connections
+const BONES = [
+  [0,1],[0,2],[0,3],
+  [1,4],[4,7],[7,10],
+  [2,5],[5,8],[8,11],
+  [3,6],[6,9],
+  [9,12],[12,15],
+  [9,13],[13,16],
+  [9,14],[14,17],
+  [16,18],[18,20],[20,22],
+  [17,19],[19,21],[21,23],
+];
+
+// T-pose base positions
+const T_POSE = [
+  [ 0.00, 0.00, 0.00],  // 0  pelvis
+  [-0.10, 0.00,-0.05],  // 1  left_hip
+  [ 0.10, 0.00,-0.05],  // 2  right_hip
+  [ 0.00, 0.00, 0.10],  // 3  spine1
+  [-0.10, 0.00,-0.45],  // 4  left_knee
+  [ 0.10, 0.00,-0.45],  // 5  right_knee
+  [ 0.00, 0.00, 0.20],  // 6  spine2
+  [-0.10, 0.00,-0.85],  // 7  left_ankle
+  [ 0.10, 0.00,-0.85],  // 8  right_ankle
+  [ 0.00, 0.00, 0.30],  // 9  spine3
+  [-0.10, 0.00,-0.95],  // 10 left_foot
+  [ 0.10, 0.00,-0.95],  // 11 right_foot
+  [ 0.00, 0.00, 0.45],  // 12 neck
+  [-0.10, 0.00, 0.40],  // 13 left_collar
+  [ 0.10, 0.00, 0.40],  // 14 right_collar
+  [ 0.00, 0.00, 0.60],  // 15 head
+  [-0.35, 0.00, 0.38],  // 16 left_shoulder
+  [ 0.35, 0.00, 0.38],  // 17 right_shoulder
+  [-0.65, 0.00, 0.38],  // 18 left_elbow
+  [ 0.65, 0.00, 0.38],  // 19 right_elbow
+  [-0.90, 0.00, 0.38],  // 20 left_wrist
+  [ 0.90, 0.00, 0.38],  // 21 right_wrist
+  [-1.00, 0.00, 0.38],  // 22 left_hand
+  [ 1.00, 0.00, 0.38],  // 23 right_hand
+];
+
+// Lift feet to z=0
+const minZ = Math.min(...T_POSE.map(p=>p[2]));
+T_POSE.forEach(p => p[2] -= minZ - 0.05);
+
+// Bone colors
+function boneColor(j1, j2) {
+  const names = ['pelvis','left_hip','right_hip','spine1','left_knee','right_knee',
+    'spine2','left_ankle','right_ankle','spine3','left_foot','right_foot','neck',
+    'left_collar','right_collar','head','left_shoulder','right_shoulder',
+    'left_elbow','right_elbow','left_wrist','right_wrist','left_hand','right_hand'];
+  const n1 = names[j1], n2 = names[j2];
+  if (n1.includes('left')  || n2.includes('left'))  return 0xff6b6b;
+  if (n1.includes('right') || n2.includes('right')) return 0x69ff47;
+  return 0x8888ff;
+}
+
+// Convert pose frame (72 values) → 24 positions
+function poseToPositions(frame, scale=0.3) {
+  const positions = T_POSE.map(p => [...p]);
+  for (let i=0;i<24;i++) {
+    const ax = frame[i*3], ay = frame[i*3+1], az = frame[i*3+2];
+    positions[i][0] += Math.sin(ay) * scale * 0.5;
+    positions[i][1] += Math.sin(az) * scale * 0.3;
+    positions[i][2] += Math.sin(ax) * scale * 0.4;
+  }
+  // Keep above floor
+  const minZ = Math.min(...[7,8,10,11].map(i=>positions[i][2]));
+  if (minZ < 0) positions.forEach(p => p[2] -= minZ);
+  return positions;
+}
+
+let scene, camera, renderer, boneMeshes=[], jointMeshes=[];
+let poses=[], frameIdx=0, playing=true, speed=1.0;
+let audioEl=null, animHandle=null, lastTime=null;
+const FPS = 7.5;
+
+function startViewer(posesData, audioUrl, tempo) {
+  poses = posesData;
+  frameIdx = 0;
+
+  // Setup Three.js
+  const canvas = document.getElementById('three-canvas');
+  const viewer = document.getElementById('viewer');
+  canvas.width  = viewer.clientWidth;
+  canvas.height = viewer.clientHeight;
+
+  if (!renderer) {
+    scene    = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a0a);
+
+    camera   = new THREE.PerspectiveCamera(45, canvas.width/canvas.height, 0.1, 100);
+    camera.position.set(0, -3, 2);
+    camera.lookAt(0, 0, 1);
+
+    renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+    renderer.setSize(canvas.width, canvas.height);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    // Lights
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(2, -2, 5);
+    scene.add(dirLight);
+
+    // Floor grid
+    const grid = new THREE.GridHelper(6, 20, 0x1a1a1a, 0x1a1a1a);
+    grid.rotation.x = Math.PI/2;
+    grid.position.z = 0;
+    scene.add(grid);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = viewer.clientWidth / viewer.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(viewer.clientWidth, viewer.clientHeight);
+    });
+  }
+
+  // Clear old bones/joints
+  boneMeshes.forEach(m => scene.remove(m));
+  jointMeshes.forEach(m => scene.remove(m));
+  boneMeshes = []; jointMeshes = [];
+
+  // Create bone lines
+  BONES.forEach(([j1,j2]) => {
+    const mat = new THREE.LineBasicMaterial({color: boneColor(j1,j2), linewidth:2});
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)
+    ]);
+    const line = new THREE.Line(geo, mat);
+    scene.add(line);
+    boneMeshes.push({line, j1, j2});
+  });
+
+  // Create joint spheres
+  for (let i=0;i<24;i++) {
+    const size = i===15 ? 0.06 : 0.035;  // bigger head
+    const mat  = new THREE.MeshStandardMaterial({
+      color: i===15 ? 0xffff00 : 0xffffff,
+      emissive: i===15 ? 0x888800 : 0x222222
+    });
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(size,8,8), mat);
+    scene.add(mesh);
+    jointMeshes.push(mesh);
+  }
+
+  // Audio
+  if (audioEl) { audioEl.pause(); audioEl = null; }
+  audioEl = new Audio('http://localhost:8000' + audioUrl);
+  audioEl.play().catch(e => console.warn('Audio blocked:', e));
+
+  // Beat flash sync
+  const beatInterval = (60 / tempo) * 1000;
+  let beatFlash = false;
+  setInterval(() => {
+    const flash = document.getElementById('beat-flash');
+    flash.style.opacity = '1';
+    setTimeout(() => flash.style.opacity = '0', 80);
+  }, beatInterval);
+
+  // Start animation loop
+  if (animHandle) cancelAnimationFrame(animHandle);
+  lastTime = null;
+  animate();
+}
+
+function animate(timestamp) {
+  animHandle = requestAnimationFrame(animate);
+ if (!poses || !poses.length || !poses[0]) return;
+  if (playing) {
+    if (!lastTime) lastTime = timestamp;
+    const elapsed = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+    frameIdx += elapsed * FPS * speed;
+    if (frameIdx >= poses.length) frameIdx = 0;
+  }
+
+  const fi = Math.floor(frameIdx) % poses.length;
+  const positions = poseToPositions(poses[fi]);
+
+  // Update bones
+  boneMeshes.forEach(({line, j1, j2}) => {
+    const p1 = positions[j1], p2 = positions[j2];
+    const pts = [new THREE.Vector3(...p1), new THREE.Vector3(...p2)];
+    line.geometry.setFromPoints(pts);
+    line.geometry.attributes.position.needsUpdate = true;
+  });
+
+  // Update joints
+  jointMeshes.forEach((mesh, i) => {
+    const p = positions[i];
+    mesh.position.set(p[0], p[1], p[2]);
+  });
+
+  // Slowly orbit camera
+  const angle = fi * 0.003;
+  camera.position.x = Math.sin(angle) * 3;
+  camera.position.y = Math.cos(angle) * -3;
+  camera.lookAt(0, 0, 1);
+
+  // Update UI
+  document.getElementById('frame-overlay').textContent = `Frame ${fi+1} / ${poses.length}`;
+  document.getElementById('frame-val').textContent = fi;
+  document.getElementById('frame-slider').value = fi;
+
+  renderer.render(scene, camera);
+}
+
+// ══════════════════════════════════════════════
+//  PLAYBACK CONTROLS
+// ══════════════════════════════════════════════
+function togglePlay() {
+  playing = !playing;
+  const btn = document.getElementById('play-btn');
+  btn.textContent = playing ? '⏸ Pause' : '▶ Play';
+  if (audioEl) playing ? audioEl.play() : audioEl.pause();
+  lastTime = null;
+}
+function resetAnim() {
+  frameIdx = 0; lastTime = null;
+  if (audioEl) { audioEl.currentTime = 0; if (playing) audioEl.play(); }
+}
+function setSpeed(v) {
+  speed = parseFloat(v);
+  document.getElementById('speed-val').textContent = v + '×';
+}
+function scrubTo(v) {
+  frameIdx = parseInt(v);
+  document.getElementById('frame-val').textContent = v;
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>

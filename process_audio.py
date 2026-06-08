@@ -8,6 +8,7 @@ from beat_detection import detect_beats
 from music_features import extract_features
 from song_structure import analyze_structure
 
+
 def process_audio(file_path):
 
     print("\n" + "=" * 50)
@@ -16,23 +17,21 @@ def process_audio(file_path):
 
     # ---------- Step 1: Validate ----------
     print("[ STEP 1 ] Validating audio...")
-
     if not validate_audio(file_path):
         return None
 
     # ---------- Step 2: Normalize ----------
     print("\n[ STEP 2 ] Normalizing audio...")
 
-    song_name = os.path.splitext(os.path.basename(file_path))[0]
-
-    # Each song gets its own folder inside output/
+    song_name   = os.path.splitext(os.path.basename(file_path))[0]
     song_folder = f"output/{song_name}"
     os.makedirs(song_folder, exist_ok=True)
 
-    audio = AudioSegment.from_file(file_path)
+    audio            = AudioSegment.from_file(file_path)
     normalized_audio = normalize(audio)
-    normalized_path = f"{song_folder}/normalized_audio.wav"
+    normalized_path  = f"{song_folder}/normalized_audio.wav"
     normalized_audio.export(normalized_path, format="wav")
+
     print("✅ Audio normalized")
     print(f"📂 Output folder: {song_folder}")
 
@@ -60,14 +59,13 @@ def process_audio(file_path):
 
     # ---------- Step 4: Detect beats ----------
     print("\n[ STEP 4 ] Detecting beats...")
-
     detect_beats(no_vocals_path, song_folder)
 
     # ---------- Step 5: Extract features ----------
     print("\n[ STEP 5 ] Extracting music features...")
-
     extract_features(no_vocals_path, song_folder)
 
+    # ---------- Step 6: Song structure ----------
     print("\n[ STEP 6 ] Analyzing song structure...")
     analyze_structure(no_vocals_path, song_folder)
 
@@ -77,17 +75,14 @@ def process_audio(file_path):
     print("=" * 50)
     print(f"  Song folder : {song_folder}/")
     print(f"  No-vocals   : {no_vocals_path}")
-    print(f"  Beat map    : {song_folder}/beat_map.png")
-    print(f"  Features    : {song_folder}/beat_times.npy etc.")
     print("=" * 50 + "\n")
-    print("✅ Ready for dance generation (Day 4)")
+    print("✅ Ready for dance generation")
 
-    return {
-    "no_vocals_path": no_vocals_path,
-    "song_folder"   : song_folder,
-    "beat_map"      : f"{song_folder}/beat_map.png"
-}
+    # Return plain string — just the no_vocals path
+    return no_vocals_path
 
 
 if __name__ == "__main__":
-    process_audio("audio/Raga.mp3")
+    import sys
+    song = sys.argv[1] if len(sys.argv) > 1 else "audio/test-1.mp3"
+    process_audio(song)
