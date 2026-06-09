@@ -1,15 +1,10 @@
 """
 generate_poses.py
-Runs the trained DanceTransformer on a song and outputs 3D poses.
-Style is automatically detected from the audio.
-
-Exact architecture matched to best_model.pt:
-  music_dim   = 438
-  pose_dim    = 72
-  d_model     = 256
-  nhead       = 8
-  num_layers  = 6
-  feedforward = 1024
+Beat-aware dance pose generation.
+- Loads beat timestamps saved by beat_detection.py
+- Extracts audio features only at beat-aligned frames
+- Model generates exactly one pose per beat
+- Result: dancer moves in sync with every beat
 """
 
 import os
@@ -63,8 +58,7 @@ def detect_style(audio_path):
 
     print("\n🎧 Detecting style from audio...")
 
-    y, sr = librosa.load(audio_path)
-
+    y, sr        = librosa.load(audio_path)
     tempo, _     = librosa.beat.beat_track(y=y, sr=sr)
     tempo        = float(np.asarray(tempo).flatten()[0])
     avg_energy   = float(np.mean(librosa.feature.rms(y=y)[0]))
@@ -91,7 +85,6 @@ def detect_style(audio_path):
 
     print(f"\n✅ Detected style : {style.upper()}")
     print(f"   Reason        : {reason}")
-
     return style, tempo
 
 
@@ -109,7 +102,7 @@ def load_model(checkpoint_path):
         print(f"❌ Checkpoint not found: {checkpoint_path}")
         sys.exit(1)
 
-    ckpt  = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     print(f"   Epoch  : {ckpt.get('epoch', '?')}")
     print(f"   Loss   : {ckpt.get('loss', '?'):.4f}")
 
@@ -123,10 +116,11 @@ def load_model(checkpoint_path):
 
 
 # ─────────────────────────────────────────
-#  FEATURE EXTRACTION — 438 dims
+#  FEATURE EXTRACTION — full 438 dims
 # ─────────────────────────────────────────
 
-def extract_features(audio_path):
+def extract_all_features(audio_path):
+    """Extract full feature matrix (T, 438) at 7.5fps"""
 
     print(f"\n🎵 Extracting 438-dim features...")
 
@@ -176,10 +170,35 @@ def extract_features(audio_path):
 
     features = (features - features.mean(axis=0)) / (features.std(axis=0) + 1e-8)
 
-    print(f"✅ Features shape : {features.shape}")
-    assert features.shape[1] == 438, f"Expected 438 dims, got {features.shape[1]}"
+    assert features.shape[1] == 438, f"Expected 438, got {features.shape[1]}"
+    print(f"✅ Full features  : {features.shape}")
 
-    return features.astype(np.float32)
+    return features.astype(np.float32), sr, hop_length
+
+
+# ─────────────────────────────────────────
+#  BEAT-ALIGNED FEATURE SLICING
+# ─────────────────────────────────────────
+
+def slice_features_at_beats(features, beat_times, sr, hop_length):
+    """
+    For each beat timestamp, find the closest feature frame.
+    Returns features shape (num_beats, 438) — one row per beat.
+    """
+    beat_frame_indices = librosa.time_to_frames(
+        beat_times,
+        sr=sr,
+        hop_length=hop_length
+    )
+    # Clamp to valid range
+    beat_frame_indices = np.clip(beat_frame_indices, 0, len(features) - 1)
+
+    beat_features = features[beat_frame_indices]  # (num_beats, 438)
+
+    print(f"✅ Beat frames    : {len(beat_frame_indices)} beats")
+    print(f"✅ Beat features  : {beat_features.shape}")
+
+    return beat_features, beat_frame_indices
 
 
 # ─────────────────────────────────────────
@@ -196,21 +215,31 @@ def smooth_poses(poses, style):
     }
     window = style_window.get(style, 11)
 
+    # Window must be odd and smaller than data
     if window >= poses.shape[0]:
         window = max(poses.shape[0] // 2, 3)
         if window % 2 == 0:
             window -= 1
 
+    # Need at least polyorder+1 points
+    if window < 4:
+        print(f"⚠️  Too few frames to smooth ({poses.shape[0]}) — skipping")
+        return poses
+
     smoothed = np.copy(poses)
     for j in range(poses.shape[1]):
-        smoothed[:, j] = savgol_filter(poses[:, j], window_length=window, polyorder=3)
+        smoothed[:, j] = savgol_filter(
+            poses[:, j],
+            window_length=window,
+            polyorder=3
+        )
 
     print(f"✅ Smoothing      : window={window} (style={style})")
     return smoothed
 
 
 # ─────────────────────────────────────────
-#  MAIN — called by api.py automatically
+#  MAIN
 # ─────────────────────────────────────────
 
 def generate_poses(
@@ -219,14 +248,13 @@ def generate_poses(
     song_folder     = None,
 ):
     print("\n" + "="*55)
-    print("  DANCE POSE GENERATION")
+    print("  BEAT-AWARE DANCE POSE GENERATION")
     print("="*55)
 
-    # Auto-derive song_folder from no_vocals_path if not given
-    # e.g. "separated/Raga/htdemucs/..." → song_name = "Raga"
+    # Auto-derive song_folder
     if song_folder is None:
-        parts     = no_vocals_path.replace("\\", "/").split("/")
-        song_name = parts[1] if len(parts) > 1 else "output"
+        parts       = no_vocals_path.replace("\\", "/").split("/")
+        song_name   = parts[1] if len(parts) > 1 else "output"
         song_folder = f"output/{song_name}"
 
     os.makedirs(song_folder, exist_ok=True)
@@ -235,28 +263,51 @@ def generate_poses(
         print(f"❌ Audio not found: {no_vocals_path}")
         return None
 
-    # Auto detect style
+    # ── Load beat timestamps saved by beat_detection.py ──
+    beat_path = f"{song_folder}/beat_times.npy"
+    if os.path.exists(beat_path):
+        beat_times = np.load(beat_path)
+        print(f"\n✅ Beat timestamps loaded : {len(beat_times)} beats")
+        print(f"   First 5 beats (sec)   : {beat_times[:5].tolist()}")
+    else:
+        print(f"⚠️  beat_times.npy not found — falling back to flat fps generation")
+        beat_times = None
+
+    # ── Style detection ──
     style, tempo = detect_style(no_vocals_path)
 
-    # Load model
+    # ── Load model ──
     model, device = load_model(checkpoint_path)
 
-    # Extract features
-    features    = extract_features(no_vocals_path)
-    feat_tensor = torch.FloatTensor(features).unsqueeze(0).to(device)
+    # ── Extract full feature matrix ──
+    features, sr, hop_length = extract_all_features(no_vocals_path)
 
-    # Generate
+    # ── Slice features at beat positions ──
+    if beat_times is not None and len(beat_times) > 0:
+        beat_features, beat_indices = slice_features_at_beats(
+            features, beat_times, sr, hop_length
+        )
+        print(f"\n🎯 Mode: BEAT-AWARE — one pose per beat")
+        input_features = beat_features   # (num_beats, 438)
+    else:
+        print(f"\n🎯 Mode: FLAT FPS — one pose per frame")
+        input_features = features        # (T, 438)
+
+    # ── Run model ──
     print("\n💃 Generating poses...")
+    feat_tensor = torch.FloatTensor(input_features).unsqueeze(0).to(device)
+
     with torch.no_grad():
         poses = model(feat_tensor)
 
     poses_np = poses.squeeze(0).cpu().numpy()
     print(f"✅ Raw poses      : {poses_np.shape}")
+    # In beat-aware mode: (num_beats, 72) — one pose per beat
 
-    # Smooth
+    # ── Smooth ──
     poses_smooth = smooth_poses(poses_np, style=style)
 
-    # Save
+    # ── Save ──
     raw_path    = f"{song_folder}/poses_raw.npy"
     smooth_path = f"{song_folder}/poses_smooth.npy"
     meta_path   = f"{song_folder}/generation_meta.pkl"
@@ -265,12 +316,14 @@ def generate_poses(
     np.save(smooth_path, poses_smooth)
 
     meta = {
-        "style"       : style,
-        "tempo"       : tempo,
-        "total_frames": poses_smooth.shape[0],
-        "pose_dim"    : poses_smooth.shape[1],
-        "song_folder" : song_folder,
-        "checkpoint"  : checkpoint_path,
+        "style"        : style,
+        "tempo"        : tempo,
+        "total_frames" : poses_smooth.shape[0],
+        "pose_dim"     : poses_smooth.shape[1],
+        "song_folder"  : song_folder,
+        "checkpoint"   : checkpoint_path,
+        "beat_aware"   : beat_times is not None,
+        "num_beats"    : len(beat_times) if beat_times is not None else 0,
     }
     with open(meta_path, "wb") as f:
         pickle.dump(meta, f)
@@ -282,6 +335,7 @@ def generate_poses(
     print("\n" + "="*55)
     print("  GENERATION COMPLETE")
     print("="*55)
+    print(f"  Mode   : {'BEAT-AWARE' if beat_times is not None else 'FLAT FPS'}")
     print(f"  Frames : {poses_smooth.shape[0]}")
     print(f"  Style  : {style.upper()} (auto detected)")
     print(f"  BPM    : {tempo:.1f}")
@@ -296,6 +350,6 @@ def generate_poses(
 # ─────────────────────────────────────────
 
 if __name__ == "__main__":
-    import sys
-    path = sys.argv[1] if len(sys.argv) > 1 else "separated/Raga/htdemucs/normalized_audio/no_vocals.mp3"
+    path = sys.argv[1] if len(sys.argv) > 1 else \
+           "separated/Raga/htdemucs/normalized_audio/no_vocals.mp3"
     generate_poses(no_vocals_path=path)
